@@ -807,12 +807,98 @@ def svg_small_multiple_stacked_bar_turn_charts(
     )
 
 
+def svg_small_multiple_turn_boxplots(
+    title: str,
+    rows: list[tuple[str, dict[int, list[float]]]],
+    value_formatter,
+    *,
+    y_label: str,
+) -> str:
+    def one_chart(label: str, values_by_turn: dict[int, list[float]]) -> str:
+        width = 960
+        height = 340
+        margin_left = 72
+        margin_right = 24
+        margin_top = 40
+        margin_bottom = 56
+        plot_width = width - margin_left - margin_right
+        plot_height = height - margin_top - margin_bottom
+        if not values_by_turn:
+            return f"<div><p class='muted'>No data for {html.escape(label)}</p></div>"
+
+        turns = sorted(values_by_turn)
+        max_turn = max(turns)
+        max_value = max((max(values) for values in values_by_turn.values() if values), default=1.0)
+        if max_value <= 0:
+            max_value = 1.0
+        bar_slot = plot_width / max(1, max_turn + 1)
+        box_width = max(2.0, min(8.0, bar_slot * 0.7))
+
+        def sx(turn: int) -> float:
+            return margin_left + turn * bar_slot + bar_slot / 2.0
+
+        def sy(value: float) -> float:
+            return margin_top + plot_height - (value / max_value) * plot_height
+
+        parts = [
+            f"<svg viewBox='0 0 {width} {height}' class='chart'>",
+            f"<text x='20' y='24' class='chart-title'>{html.escape(shorten_task_name(label, max_len=40))}</text>",
+            f"<line x1='{margin_left}' y1='{margin_top + plot_height}' x2='{width - margin_right}' y2='{margin_top + plot_height}' stroke='#94a3b8' stroke-width='1' />",
+            f"<line x1='{margin_left}' y1='{margin_top}' x2='{margin_left}' y2='{margin_top + plot_height}' stroke='#94a3b8' stroke-width='1' />",
+            f"<text x='{margin_left + plot_width/2:.2f}' y='{height - 16}' text-anchor='middle' class='axis-label'>Turn</text>",
+            f"<text x='18' y='{margin_top + plot_height/2:.2f}' text-anchor='middle' class='axis-label' transform='rotate(-90 18 {margin_top + plot_height/2:.2f})'>{html.escape(y_label)}</text>",
+        ]
+
+        for tick in range(0, max_turn + 1, 5):
+            x = sx(tick)
+            parts.append(f"<line x1='{x:.2f}' y1='{margin_top}' x2='{x:.2f}' y2='{margin_top + plot_height}' stroke='#eef2f7' stroke-width='1' />")
+            parts.append(f"<text x='{x:.2f}' y='{height - 30}' text-anchor='middle' class='axis-label'>{tick}</text>")
+
+        for tick in [0.0, max_value / 2.0, max_value]:
+            y = sy(tick)
+            parts.append(f"<line x1='{margin_left}' y1='{y:.2f}' x2='{width - margin_right}' y2='{y:.2f}' stroke='#eef2f7' stroke-width='1' />")
+            parts.append(f"<text x='{margin_left - 8}' y='{y + 4:.2f}' text-anchor='end' class='axis-label'>{html.escape(value_formatter(tick))}</text>")
+
+        for turn in turns:
+            values = values_by_turn[turn]
+            if not values:
+                continue
+            p0 = min(values)
+            p25 = percentile(values, 0.25) or 0.0
+            p50 = percentile(values, 0.50) or 0.0
+            p75 = percentile(values, 0.75) or 0.0
+            p100 = max(values)
+            x = sx(turn)
+            y0 = sy(p0)
+            y25 = sy(p25)
+            y50 = sy(p50)
+            y75 = sy(p75)
+            y100 = sy(p100)
+            box_top = min(y25, y75)
+            box_h = max(1.0, abs(y75 - y25))
+            parts.append(f"<line x1='{x:.2f}' y1='{y100:.2f}' x2='{x:.2f}' y2='{y0:.2f}' stroke='#64748b' stroke-width='1' />")
+            parts.append(f"<rect x='{x - box_width/2:.2f}' y='{box_top:.2f}' width='{box_width:.2f}' height='{box_h:.2f}' fill='#dbeafe' stroke='#2563eb' stroke-width='1' />")
+            parts.append(f"<line x1='{x - box_width/2:.2f}' y1='{y50:.2f}' x2='{x + box_width/2:.2f}' y2='{y50:.2f}' stroke='#1d4ed8' stroke-width='1.5' />")
+
+        parts.append("</svg>")
+        return "".join(parts)
+
+    return (
+        f"<h3>{html.escape(title)}</h3>"
+        + "<div class='chart-grid'>"
+        + "".join(f"<div>{one_chart(label, values)}</div>" for label, values in rows)
+        + "</div>"
+    )
+
+
 def build_visual_summary(input_dir: Path) -> str:
     summary = read_json(input_dir / "summary.json")
     trajectory_rows = read_csv(input_dir / "trajectory_summary.csv")
     task_rows = read_csv(input_dir / "task_summary.csv")
     turn_rows = read_csv(input_dir / "turn_summary.csv")
     tool_rows = read_csv(input_dir / "tool_events.csv")
+    osl_rows_path = input_dir / "osl_by_task_turn.csv"
+    osl_rows = read_csv(osl_rows_path) if osl_rows_path.is_file() else []
 
     concurrency_intervals_path = input_dir / "concurrency_intervals.csv"
     concurrency_summary_path = input_dir / "concurrency_summary.csv"
@@ -947,6 +1033,7 @@ def build_visual_summary(input_dir: Path) -> str:
             turn_level_prompt_by_task[task].append(prompt)
 
     prefill_decode_turn_rows = []
+    osl_box_turn_rows = []
     for task in focus_task_names:
         turns = sorted(
             turn
@@ -963,6 +1050,34 @@ def build_visual_summary(input_dir: Path) -> str:
                 )
             )
         prefill_decode_turn_rows.append((task, turn_values))
+        osl_box_turn_rows.append(
+            (
+                task,
+                {
+                    turn: llm_by_task_turn[(task, turn)]
+                    for turn in turns
+                    if llm_by_task_turn.get((task, turn))
+                },
+            )
+        )
+
+    osl_table = html_table(
+        ["Task", "Turn", "Rollouts", "OSL Mean", "OSL p50", "OSL p90", "OSL p99", "OSL Max"],
+        [
+            [
+                parse_task_name(row["task_name"]),
+                row["turn"],
+                row["rollout_count"],
+                fmt_num(safe_float(row["osl_mean_tokens"])),
+                fmt_num(safe_float(row["osl_p50_tokens"])),
+                fmt_num(safe_float(row["osl_p90_tokens"])),
+                fmt_num(safe_float(row["osl_p99_tokens"])),
+                fmt_num(safe_float(row["osl_max_tokens"])),
+            ]
+            for row in osl_rows
+            if row["task_name"] in focus_task_names
+        ],
+    )
 
     tool_table = html_table(
         ["Task", "Rollouts", "Avg Tool Share", "p50 Tool Share", "p90 Tool Share", "Avg Tool Event"],
@@ -1215,6 +1330,12 @@ def build_visual_summary(input_dir: Path) -> str:
         "<h2>Prefill vs decode work by turn</h2>",
         "<p class='muted'>Prompt tokens are the prefill proxy, and completion tokens are the response length for that same turn. These charts show per-task average tokens at each turn as stacked bars, with x-axis labels every 5 turns.</p>",
         svg_small_multiple_stacked_bar_turn_charts("Average prompt vs completion tokens by turn for the same top tasks", prefill_decode_turn_rows),
+        "</div>",
+        "<div class='section'>",
+        "<h2>OSL by turn</h2>",
+        "<p class='muted'>OSL is completion_tokens. Each box shows response-length spread across rollouts for one task and one turn, which avoids mixing early and late turns into one distribution.</p>",
+        svg_small_multiple_turn_boxplots("Completion-token distribution by turn for the same top tasks", osl_box_turn_rows, lambda v: f"{int(round(v))}", y_label="OSL tokens"),
+        collapsible_table("Show table", osl_table),
         "</div>",
         "<div class='section'>",
         "<h2>Trace-level concurrency</h2>"

@@ -236,6 +236,15 @@ def test_aggregate_builds_expected_trajectory_task_and_turn_rows(tmp_path):
     assert turn_rows[(100, 1, 2)]["tool_event_count"] == 0
     assert turn_rows[(100, 2, 1)]["tool_message_chars_sum"] == 0
 
+    osl_rows = {(row["pid"], row["turn"]): row for row in aggregates["osl_rows"]}
+    assert set(osl_rows) == {(100, 1), (100, 2)}
+    assert osl_rows[(100, 1)]["rollout_count"] == 2
+    assert osl_rows[(100, 1)]["osl_mean_tokens"] == 6.5
+    assert osl_rows[(100, 1)]["osl_p50_tokens"] == 6.5
+    assert osl_rows[(100, 1)]["osl_max_tokens"] == 7
+    assert osl_rows[(100, 2)]["rollout_count"] == 1
+    assert osl_rows[(100, 2)]["osl_mean_tokens"] == 3.0
+
     concurrency_rows = aggregates["concurrency_rows"]
     assert concurrency_rows[0]["start_ts_us"] == 0
     assert concurrency_rows[0]["end_ts_us"] == 5
@@ -291,6 +300,7 @@ def test_cli_on_real_trace_emits_expected_artifacts_and_invariants(tmp_path):
         "trajectory_summary.csv",
         "task_summary.csv",
         "turn_summary.csv",
+        "osl_by_task_turn.csv",
         "concurrency_intervals.csv",
         "concurrency_summary.csv",
         "summary.json",
@@ -316,6 +326,7 @@ def test_cli_on_real_trace_emits_expected_artifacts_and_invariants(tmp_path):
     assert count_csv_rows(outdir / "trajectory_summary.csv") == 1_536
     assert count_csv_rows(outdir / "task_summary.csv") == 48
     assert count_csv_rows(outdir / "turn_summary.csv") == 117_831
+    assert count_csv_rows(outdir / "osl_by_task_turn.csv") > 0
     assert count_csv_rows(outdir / "concurrency_intervals.csv") > 0
     assert count_csv_rows(outdir / "concurrency_summary.csv") == 8
 

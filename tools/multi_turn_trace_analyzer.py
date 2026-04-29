@@ -416,6 +416,29 @@ def aggregate(events: list[dict[str, Any]]) -> dict[str, Any]:
             }
         )
 
+    osl_by_task_turn: dict[tuple[int, str, int], list[int]] = defaultdict(list)
+    for row in turn_rows:
+        completion_tokens = row["completion_tokens_sum"]
+        if completion_tokens is not None:
+            osl_by_task_turn[(row["pid"], row["task_name"], row["turn"])].append(completion_tokens)
+
+    osl_rows = []
+    for (pid, task_name, turn), values in sorted(osl_by_task_turn.items()):
+        osl_rows.append(
+            {
+                "task_name": task_name,
+                "pid": pid,
+                "turn": turn,
+                "rollout_count": len(values),
+                "osl_mean_tokens": mean(values),
+                "osl_p50_tokens": percentile(values, 0.50),
+                "osl_p90_tokens": percentile(values, 0.90),
+                "osl_p99_tokens": percentile(values, 0.99),
+                "osl_min_tokens": min(values) if values else None,
+                "osl_max_tokens": max(values) if values else None,
+            }
+        )
+
     concurrency_deltas: dict[int, Counter[str]] = defaultdict(Counter)
     for event in events:
         ts_us = event["ts_us"]
@@ -471,6 +494,7 @@ def aggregate(events: list[dict[str, Any]]) -> dict[str, Any]:
         "trajectory_rows": trajectory_rows,
         "task_rows": task_rows,
         "turn_rows": turn_rows,
+        "osl_rows": osl_rows,
         "tool_events": tool_events,
         "llm_events": llm_events,
         "concurrency_rows": concurrency_rows,
@@ -916,6 +940,20 @@ def main() -> None:
         "tool_message_count",
     ]
     write_csv(outdir / "turn_summary.csv", aggregates["turn_rows"], turn_fields)
+
+    osl_fields = [
+        "task_name",
+        "pid",
+        "turn",
+        "rollout_count",
+        "osl_mean_tokens",
+        "osl_p50_tokens",
+        "osl_p90_tokens",
+        "osl_p99_tokens",
+        "osl_min_tokens",
+        "osl_max_tokens",
+    ]
+    write_csv(outdir / "osl_by_task_turn.csv", aggregates["osl_rows"], osl_fields)
 
     concurrency_fields = [
         "start_ts_us",
