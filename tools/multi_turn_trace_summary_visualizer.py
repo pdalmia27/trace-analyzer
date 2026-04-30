@@ -826,16 +826,29 @@ def svg_small_multiple_turn_boxplots(
         if not values_by_turn:
             return f"<div><p class='muted'>No data for {html.escape(label)}</p></div>"
 
-        turns = sorted(values_by_turn)
-        max_turn = max(turns)
-        max_value = max((max(values) for values in values_by_turn.values() if values), default=1.0)
+        bucket_size = 10
+        max_buckets = 10
+        bucketed_values: dict[int, list[float]] = defaultdict(list)
+        max_observed_turn = max(values_by_turn)
+        for turn, values in values_by_turn.items():
+            bucket = min(turn // bucket_size, max_buckets - 1)
+            bucketed_values[bucket].extend(values)
+
+        buckets = sorted(bucketed_values)
+        max_value = max((max(values) for values in bucketed_values.values() if values), default=1.0)
         if max_value <= 0:
             max_value = 1.0
-        bar_slot = plot_width / max(1, max_turn + 1)
-        box_width = max(2.0, min(8.0, bar_slot * 0.7))
+        bar_slot = plot_width / max(1, len(buckets))
+        box_width = max(16.0, min(44.0, bar_slot * 0.45))
 
-        def sx(turn: int) -> float:
-            return margin_left + turn * bar_slot + bar_slot / 2.0
+        def bucket_label(bucket: int) -> str:
+            start = bucket * bucket_size
+            if bucket == max_buckets - 1 and max_observed_turn >= max_buckets * bucket_size:
+                return f"{start}+"
+            return f"{start}-{start + bucket_size}"
+
+        def sx(bucket_index: int) -> float:
+            return margin_left + bucket_index * bar_slot + bar_slot / 2.0
 
         def sy(value: float) -> float:
             return margin_top + plot_height - (value / max_value) * plot_height
@@ -845,22 +858,22 @@ def svg_small_multiple_turn_boxplots(
             f"<text x='20' y='24' class='chart-title'>{html.escape(shorten_task_name(label, max_len=40))}</text>",
             f"<line x1='{margin_left}' y1='{margin_top + plot_height}' x2='{width - margin_right}' y2='{margin_top + plot_height}' stroke='#94a3b8' stroke-width='1' />",
             f"<line x1='{margin_left}' y1='{margin_top}' x2='{margin_left}' y2='{margin_top + plot_height}' stroke='#94a3b8' stroke-width='1' />",
-            f"<text x='{margin_left + plot_width/2:.2f}' y='{height - 16}' text-anchor='middle' class='axis-label'>Turn</text>",
+            f"<text x='{margin_left + plot_width/2:.2f}' y='{height - 16}' text-anchor='middle' class='axis-label'>Turn bucket</text>",
             f"<text x='18' y='{margin_top + plot_height/2:.2f}' text-anchor='middle' class='axis-label' transform='rotate(-90 18 {margin_top + plot_height/2:.2f})'>{html.escape(y_label)}</text>",
         ]
 
-        for tick in range(0, max_turn + 1, 5):
-            x = sx(tick)
+        for idx, bucket in enumerate(buckets):
+            x = sx(idx)
             parts.append(f"<line x1='{x:.2f}' y1='{margin_top}' x2='{x:.2f}' y2='{margin_top + plot_height}' stroke='#eef2f7' stroke-width='1' />")
-            parts.append(f"<text x='{x:.2f}' y='{height - 30}' text-anchor='middle' class='axis-label'>{tick}</text>")
+            parts.append(f"<text x='{x:.2f}' y='{height - 30}' text-anchor='middle' class='axis-label'>{html.escape(bucket_label(bucket))}</text>")
 
         for tick in [0.0, max_value / 2.0, max_value]:
             y = sy(tick)
             parts.append(f"<line x1='{margin_left}' y1='{y:.2f}' x2='{width - margin_right}' y2='{y:.2f}' stroke='#eef2f7' stroke-width='1' />")
             parts.append(f"<text x='{margin_left - 8}' y='{y + 4:.2f}' text-anchor='end' class='axis-label'>{html.escape(value_formatter(tick))}</text>")
 
-        for turn in turns:
-            values = values_by_turn[turn]
+        for idx, bucket in enumerate(buckets):
+            values = bucketed_values[bucket]
             if not values:
                 continue
             p0 = min(values)
@@ -868,7 +881,7 @@ def svg_small_multiple_turn_boxplots(
             p50 = percentile(values, 0.50) or 0.0
             p75 = percentile(values, 0.75) or 0.0
             p100 = max(values)
-            x = sx(turn)
+            x = sx(idx)
             y0 = sy(p0)
             y25 = sy(p25)
             y50 = sy(p50)
@@ -1350,9 +1363,9 @@ def build_visual_summary(input_dir: Path) -> str:
         svg_small_multiple_stacked_bar_turn_charts("Average prompt vs completion tokens by turn for the same top tasks", prefill_decode_turn_rows),
         "</div>",
         "<div class='section'>",
-        "<h2>OSL by turn</h2>",
-        "<p class='muted'>OSL is completion_tokens. Each box shows response-length spread across rollouts for one task and one turn; the expandable table compresses this to one averaged row per focus task.</p>",
-        svg_small_multiple_turn_boxplots("Completion-token distribution by turn for the same top tasks", osl_box_turn_rows, lambda v: f"{int(round(v))}", y_label="OSL tokens"),
+        "<h2>OSL by turn bucket</h2>",
+        "<p class='muted'>OSL is completion_tokens. Each box aggregates response-length spread across rollouts for a 10-turn bucket, capped at 10 boxes per task chart. The expandable table compresses this to one averaged row per focus task.</p>",
+        svg_small_multiple_turn_boxplots("Completion-token distribution by 10-turn bucket for the same top tasks", osl_box_turn_rows, lambda v: f"{int(round(v))}", y_label="OSL tokens"),
         collapsible_table("Show table", osl_table),
         "</div>",
         "<div class='section'>",
