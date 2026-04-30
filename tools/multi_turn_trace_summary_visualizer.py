@@ -1308,7 +1308,7 @@ def build_visual_summary(input_dir: Path) -> str:
         ".chart-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:18px;}",
         ".section-osl{padding:26px 28px;}",
         ".chart-grid-osl{grid-template-columns:repeat(3,minmax(0,1fr));gap:24px 26px;}",
-        ".axis-label{font-size:11px;fill:#4b5563;} .chart-title{font-size:16px;font-weight:700;fill:#111827;} .value-label{font-size:11px;fill:#111827;}",
+        ".axis-label{font-size:15px;font-weight:700;fill:#334155;} .chart-title{font-size:20px;font-weight:800;fill:#111827;} .value-label{font-size:14px;font-weight:700;fill:#111827;}",
         ".table-details{margin-top:8px;}",
         ".table-details summary{display:inline-flex;align-items:center;gap:8px;cursor:pointer;list-style:none;padding:8px 12px;border:1px solid #d6deeb;border-radius:999px;background:#f8fafc;color:#334155;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;}",
         ".table-details summary::-webkit-details-marker{display:none;}",
