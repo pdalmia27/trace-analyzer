@@ -981,16 +981,12 @@ def build_visual_summary(input_dir: Path) -> str:
     )
 
     tool_by_task: dict[str, list[float]] = defaultdict(list)
-    tool_msg_len_by_task: dict[str, list[int]] = defaultdict(list)
     for row in tool_rows:
         task = row["task_name"]
         dur_us = safe_float(row["dur_us"])
         if dur_us is None:
             continue
         tool_by_task[task].append(dur_us)
-        msg_len = safe_int(row.get("message_len_chars"))
-        if msg_len is not None:
-            tool_msg_len_by_task[task].append(msg_len)
 
     tool_share_pct_by_task: dict[str, list[float]] = defaultdict(list)
     for row in trajectory_rows:
@@ -1019,17 +1015,12 @@ def build_visual_summary(input_dir: Path) -> str:
         max_x=50.0,
         tick_values=[float(v) for v in range(0, 51, 5)],
     )
-    tool_msg_len_box = svg_box_plot_comparison(
-        "Tool response length for the same 5 focus tasks",
-        [(task, [float(v) for v in tool_msg_len_by_task.get(task, [])]) for task in focus_task_names if tool_msg_len_by_task.get(task)],
-        lambda v: f"{v:.0f}",
-    )
-
     llm_by_task_turn: dict[tuple[str, int], list[float]] = defaultdict(list)
     prompt_by_task_turn: dict[tuple[str, int], list[float]] = defaultdict(list)
     llm_by_task_total: dict[str, float] = defaultdict(float)
     turn_level_prompt_by_task: dict[str, list[float]] = defaultdict(list)
     turn_level_completion_by_task: dict[str, list[float]] = defaultdict(list)
+    turn_rows_by_trajectory: dict[tuple[str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in turn_rows:
         turn = safe_int(row["turn"])
         completion = safe_float(row["completion_tokens_sum"])
@@ -1037,6 +1028,7 @@ def build_visual_summary(input_dir: Path) -> str:
         task = row["task_name"]
         if turn is None:
             continue
+        turn_rows_by_trajectory[(row["pid"], row["tid"], task, row["rollout_id"])].append(row)
         if completion is not None:
             llm_by_task_turn[(task, turn)].append(completion)
             llm_by_task_total[task] += completion
@@ -1045,12 +1037,36 @@ def build_visual_summary(input_dir: Path) -> str:
             prompt_by_task_turn[(task, turn)].append(prompt)
             turn_level_prompt_by_task[task].append(prompt)
 
+    new_prefill_by_task_turn: dict[tuple[str, int], list[float]] = defaultdict(list)
+    skipped_prefill_reset_count = 0
+    for trajectory_rows in turn_rows_by_trajectory.values():
+        by_turn = {safe_int(row["turn"]): row for row in trajectory_rows if safe_int(row["turn"]) is not None}
+        for turn, row in by_turn.items():
+            next_row = by_turn.get(turn + 1)
+            if next_row is None:
+                continue
+            prompt = safe_float(row["prompt_tokens_sum"])
+            next_prompt = safe_float(next_row["prompt_tokens_sum"])
+            completion = safe_float(row["completion_tokens_sum"])
+            task = row["task_name"]
+            if prompt is None or next_prompt is None or completion is None:
+                continue
+            prefix_growth = next_prompt - prompt
+            non_osl_prefix_growth = prefix_growth - completion
+            if prefix_growth < 0 or non_osl_prefix_growth < 0:
+                skipped_prefill_reset_count += 1
+                continue
+            new_prefill_by_task_turn[(task, turn)].append(non_osl_prefix_growth)
+
     prefill_decode_turn_rows = []
     osl_box_turn_rows = []
+    new_prefill_box_turn_rows = []
     for task in focus_task_names:
         turns = sorted(
             turn
-            for (task_name, turn) in set(list(prompt_by_task_turn.keys()) + list(llm_by_task_turn.keys()))
+            for (task_name, turn) in set(
+                list(prompt_by_task_turn.keys()) + list(llm_by_task_turn.keys()) + list(new_prefill_by_task_turn.keys())
+            )
             if task_name == task
         )
         turn_values = []
@@ -1073,6 +1089,42 @@ def build_visual_summary(input_dir: Path) -> str:
                 },
             )
         )
+        new_prefill_box_turn_rows.append(
+            (
+                task,
+                {
+                    turn: new_prefill_by_task_turn[(task, turn)]
+                    for turn in turns
+                    if new_prefill_by_task_turn.get((task, turn))
+                },
+            )
+        )
+
+    new_prefill_table_rows = []
+    for task in focus_task_names:
+        values = [
+            value
+            for (task_name, _turn), turn_values in new_prefill_by_task_turn.items()
+            if task_name == task
+            for value in turn_values
+        ]
+        if not values:
+            continue
+        new_prefill_table_rows.append(
+            [
+                parse_task_name(task),
+                len(values),
+                fmt_num(mean(values)),
+                fmt_num(percentile(values, 0.50)),
+                fmt_num(percentile(values, 0.90)),
+                fmt_num(percentile(values, 0.99)),
+                fmt_num(max(values)),
+            ]
+        )
+    new_prefill_table = html_table(
+        ["Task", "Samples", "Mean New Prefill", "p50", "p90", "p99", "Max"],
+        new_prefill_table_rows,
+    )
 
     osl_task_table_rows = []
     for task in focus_task_names:
@@ -1212,10 +1264,10 @@ def build_visual_summary(input_dir: Path) -> str:
         task = row["task_name"]
         llm = safe_float(row["llm_generation_us"]) or 0.0
         tool = safe_float(row["tool_execution_us"]) or 0.0
-        env = safe_float(row["container_startup_us"]) or 0.0
+        env = safe_float(row.get("container_startup_us")) or 0.0
         framework = safe_float(row["framework_overhead_us"]) or 0.0
         queue = safe_float(row["queue_wait_us"]) or 0.0
-        eval_time = safe_float(row["evaluation_us"]) or 0.0
+        eval_time = safe_float(row.get("evaluation_us")) or 0.0
         total = llm + tool + env + framework + queue + eval_time
         by_task_total[task] += total
         by_task_llm[task] += llm
@@ -1355,9 +1407,11 @@ def build_visual_summary(input_dir: Path) -> str:
         collapsible_table("Show table", tool_table),
         "</div>",
         "<div class='section'>",
-        "<h2>Tool response length by task</h2>",
-        "<p class='muted'>Box plots for tool response length on the same 5 focus tasks, so we can compare output-size spread directly against tool-impact spread.</p>",
-        tool_msg_len_box,
+        "<h2>New prefill work by turn bucket</h2>",
+        "<p class='muted'>New prefill work is computed as prompt_tokens(turn+1) - prompt_tokens(turn) - completion_tokens(turn). This excludes OSL, which is plotted separately below, and captures the non-OSL prefix growth from tool observations, tool-call scaffolding, role/template tokens, and other agent or environment state inserted before the next generation. Negative growth transitions are treated as context truncation/reset artifacts and excluded"
+        f" ({skipped_prefill_reset_count} excluded).</p>",
+        svg_small_multiple_turn_boxplots("Non-OSL prefix growth by 10-turn bucket for the same top tasks", new_prefill_box_turn_rows, lambda v: f"{int(round(v))}", y_label="New prefill tokens"),
+        collapsible_table("Show table", new_prefill_table),
         "</div>",
         "<div class='section'>",
         "<h2>Prefill vs decode work by turn</h2>",
