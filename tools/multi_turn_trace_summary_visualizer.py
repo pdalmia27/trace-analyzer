@@ -138,6 +138,27 @@ def html_table(headers: list[str], rows: list[list[Any]]) -> str:
     return f"<table><thead><tr>{head}</tr></thead><tbody>{''.join(body_rows)}</tbody></table>"
 
 
+def html_grouped_turn_table(
+    rows_by_task: list[tuple[str, list[list[Any]]]],
+    headers: list[str],
+) -> str:
+    if not rows_by_task:
+        return "<p class='muted'>No data.</p>"
+    head = "".join(f"<th>{html.escape(str(cell))}</th>" for cell in headers)
+    sections = []
+    for task, rows in rows_by_task:
+        body_rows = []
+        for row in rows:
+            body_rows.append("<tr>" + "".join(f"<td>{html.escape(str(cell))}</td>" for cell in row) + "</tr>")
+        sections.append(
+            "<div class='table-group'>"
+            f"<div class='table-group-title'><span title='{html.escape(task)}'>{html.escape(parse_task_name(task))}</span></div>"
+            f"<table><thead><tr>{head}</tr></thead><tbody>{''.join(body_rows)}</tbody></table>"
+            "</div>"
+        )
+    return "".join(sections)
+
+
 def collapsible_table(button_label: str, table_html: str) -> str:
     return (
         "<details class='table-details'>"
@@ -1061,22 +1082,32 @@ def build_visual_summary(input_dir: Path) -> str:
             )
         )
 
-    osl_table = html_table(
-        ["Task", "Turn", "Rollouts", "OSL Mean", "OSL p50", "OSL p90", "OSL p99", "OSL Max"],
-        [
-            [
-                parse_task_name(row["task_name"]),
-                row["turn"],
-                row["rollout_count"],
-                fmt_num(safe_float(row["osl_mean_tokens"])),
-                fmt_num(safe_float(row["osl_p50_tokens"])),
-                fmt_num(safe_float(row["osl_p90_tokens"])),
-                fmt_num(safe_float(row["osl_p99_tokens"])),
-                fmt_num(safe_float(row["osl_max_tokens"])),
-            ]
-            for row in osl_rows
-            if row["task_name"] in focus_task_names
-        ],
+    osl_rows_by_task = []
+    for task in focus_task_names:
+        task_rows_for_osl = sorted(
+            (row for row in osl_rows if row["task_name"] == task),
+            key=lambda row: safe_int(row["turn"]) or 0,
+        )
+        osl_rows_by_task.append(
+            (
+                task,
+                [
+                    [
+                        row["turn"],
+                        row["rollout_count"],
+                        fmt_num(safe_float(row["osl_mean_tokens"])),
+                        fmt_num(safe_float(row["osl_p50_tokens"])),
+                        fmt_num(safe_float(row["osl_p90_tokens"])),
+                        fmt_num(safe_float(row["osl_p99_tokens"])),
+                        fmt_num(safe_float(row["osl_max_tokens"])),
+                    ]
+                    for row in task_rows_for_osl
+                ],
+            )
+        )
+    osl_table = html_grouped_turn_table(
+        [(task, rows) for task, rows in osl_rows_by_task if rows],
+        ["Turn", "Rollouts", "OSL Mean", "OSL p50", "OSL p90", "OSL p99", "OSL Max"],
     )
 
     tool_table = html_table(
@@ -1273,6 +1304,9 @@ def build_visual_summary(input_dir: Path) -> str:
         ".card{background:linear-gradient(135deg,#f8fafc,#eef2ff);border-radius:14px;padding:14px 16px;border:1px solid #e3e8f0;} .card-label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;} .card-value{font-size:22px;font-weight:700;margin-top:6px;}",
         "table{border-collapse:collapse;width:100%;font-size:13px;} th,td{border-bottom:1px solid #edf1f6;padding:10px 12px;text-align:left;vertical-align:top;} th{background:#f8fafc;font-size:12px;letter-spacing:0.03em;text-transform:uppercase;color:var(--muted);}",
         "td.task-cell{max-width:320px;word-break:break-word;}",
+        ".table-group{margin-top:14px;border:1px solid #edf1f6;border-radius:10px;overflow:hidden;}",
+        ".table-group-title{background:#f8fafc;border-bottom:1px solid #edf1f6;padding:10px 12px;font-weight:700;color:#334155;}",
+        ".table-group table{margin:0;}",
         ".two-col{display:grid;grid-template-columns:1.1fr 1fr;gap:20px;} .chart{width:100%;height:auto;background:#fff;}",
         ".chart-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:18px;}",
         ".axis-label{font-size:11px;fill:#4b5563;} .chart-title{font-size:16px;font-weight:700;fill:#111827;} .value-label{font-size:11px;fill:#111827;}",
