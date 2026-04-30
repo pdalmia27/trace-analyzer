@@ -1039,8 +1039,8 @@ def build_visual_summary(input_dir: Path) -> str:
 
     new_prefill_by_task_turn: dict[tuple[str, int], list[float]] = defaultdict(list)
     skipped_prefill_reset_count = 0
-    for trajectory_rows in turn_rows_by_trajectory.values():
-        by_turn = {safe_int(row["turn"]): row for row in trajectory_rows if safe_int(row["turn"]) is not None}
+    for trajectory_turn_rows in turn_rows_by_trajectory.values():
+        by_turn = {safe_int(row["turn"]): row for row in trajectory_turn_rows if safe_int(row["turn"]) is not None}
         for turn, row in by_turn.items():
             next_row = by_turn.get(turn + 1)
             if next_row is None:

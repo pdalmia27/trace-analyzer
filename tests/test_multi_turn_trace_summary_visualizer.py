@@ -77,6 +77,38 @@ def build_synthetic_trace() -> list[dict]:
             "dur": 8,
             "args": {"turn": 1, "prompt_tokens": 9, "completion_tokens": 6, "response_id": "c"},
         },
+        {"ph": "M", "pid": 2, "tid": 0, "name": "process_name", "args": {"name": "second_task (1 rollouts)"}},
+        {"ph": "M", "pid": 2, "tid": 1, "name": "thread_name", "args": {"name": "R1 [PASS] gen=2s eval=0s llm=1s tool=1s"}},
+        {
+            "ph": "X",
+            "pid": 2,
+            "tid": 1,
+            "cat": "llm_generation",
+            "name": "LLM Generation (GPU)",
+            "ts": 1,
+            "dur": 5,
+            "args": {"turn": 0, "prompt_tokens": 5, "completion_tokens": 2, "response_id": "d"},
+        },
+        {
+            "ph": "X",
+            "pid": 2,
+            "tid": 1,
+            "cat": "tool_execution",
+            "name": "Tool Execution (CPU)",
+            "ts": 7,
+            "dur": 4,
+            "args": {"turn": 0, "observation_type": "CmdOutputObservation", "observation_id": "e", "message": "world"},
+        },
+        {
+            "ph": "X",
+            "pid": 2,
+            "tid": 1,
+            "cat": "llm_generation",
+            "name": "LLM Generation (GPU)",
+            "ts": 12,
+            "dur": 6,
+            "args": {"turn": 1, "prompt_tokens": 11, "completion_tokens": 3, "response_id": "f"},
+        },
     ]
 
 
@@ -146,9 +178,15 @@ def test_visualizer_renders_expected_sections_from_analyzer_outputs(tmp_path):
         "GPU efficiency loss due to tool calling",
         "toy_task (2 rollouts)",
         "toy_task",
+        "second_task",
         "Show table",
     ]:
         assert text in content
+    component_start = content.index("Per-task E2E component breakdown")
+    component_end = content.index("</svg>", component_start)
+    component_svg = content[component_start:component_end]
+    assert "toy_task" in component_svg
+    assert "second_task" in component_svg
 
 
 def test_visualizer_handles_missing_concurrency_outputs_gracefully(tmp_path):
