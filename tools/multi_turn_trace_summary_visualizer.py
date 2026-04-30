@@ -815,12 +815,12 @@ def svg_small_multiple_turn_boxplots(
     y_label: str,
 ) -> str:
     def one_chart(label: str, values_by_turn: dict[int, list[float]]) -> str:
-        width = 960
-        height = 340
-        margin_left = 72
-        margin_right = 24
-        margin_top = 40
-        margin_bottom = 56
+        width = 1040
+        height = 430
+        margin_left = 78
+        margin_right = 30
+        margin_top = 48
+        margin_bottom = 68
         plot_width = width - margin_left - margin_right
         plot_height = height - margin_top - margin_bottom
         if not values_by_turn:
@@ -898,7 +898,7 @@ def svg_small_multiple_turn_boxplots(
 
     return (
         f"<h3>{html.escape(title)}</h3>"
-        + "<div class='chart-grid'>"
+        + "<div class='chart-grid chart-grid-osl'>"
         + "".join(f"<div>{one_chart(label, values)}</div>" for label, values in rows)
         + "</div>"
     )
@@ -1306,12 +1306,14 @@ def build_visual_summary(input_dir: Path) -> str:
         "td.task-cell{max-width:320px;word-break:break-word;}",
         ".two-col{display:grid;grid-template-columns:1.1fr 1fr;gap:20px;} .chart{width:100%;height:auto;background:#fff;}",
         ".chart-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:18px;}",
+        ".section-osl{padding:26px 28px;}",
+        ".chart-grid-osl{grid-template-columns:repeat(3,minmax(0,1fr));gap:24px 26px;}",
         ".axis-label{font-size:11px;fill:#4b5563;} .chart-title{font-size:16px;font-weight:700;fill:#111827;} .value-label{font-size:11px;fill:#111827;}",
         ".table-details{margin-top:8px;}",
         ".table-details summary{display:inline-flex;align-items:center;gap:8px;cursor:pointer;list-style:none;padding:8px 12px;border:1px solid #d6deeb;border-radius:999px;background:#f8fafc;color:#334155;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;}",
         ".table-details summary::-webkit-details-marker{display:none;}",
         ".table-details[open] summary{background:#eef2ff;border-color:#bfd1ff;}",
-        "@media (max-width: 1100px){.two-col,.chart-grid{grid-template-columns:1fr;}}",
+        "@media (max-width: 1100px){.two-col,.chart-grid{grid-template-columns:1fr;}.section-osl{padding:20px 22px;}}",
         "</style></head><body>",
         "<div class='section'>",
         "<h2>Per-task E2E time composition</h2>"
@@ -1362,7 +1364,7 @@ def build_visual_summary(input_dir: Path) -> str:
         "<p class='muted'>Prompt tokens are the prefill proxy, and completion tokens are the response length for that same turn. These charts show per-task average tokens at each turn as stacked bars, with x-axis labels every 5 turns.</p>",
         svg_small_multiple_stacked_bar_turn_charts("Average prompt vs completion tokens by turn for the same top tasks", prefill_decode_turn_rows),
         "</div>",
-        "<div class='section'>",
+        "<div class='section section-osl'>",
         "<h2>OSL by turn bucket</h2>",
         "<p class='muted'>OSL is completion_tokens. Each box aggregates response-length spread across rollouts for a 10-turn bucket, capped at 10 boxes per task chart. The expandable table compresses this to one averaged row per focus task.</p>",
         svg_small_multiple_turn_boxplots("Completion-token distribution by 10-turn bucket for the same top tasks", osl_box_turn_rows, lambda v: f"{int(round(v))}", y_label="OSL tokens"),
