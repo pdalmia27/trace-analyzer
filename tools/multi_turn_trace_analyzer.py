@@ -41,6 +41,10 @@ TRACE_CATEGORIES = [
     "generation_total",
 ]
 
+CATEGORY_ALIASES = {
+    "agent_init": "container_startup",
+}
+
 TRAJECTORY_TIME_CATEGORIES = [
     "llm_generation",
     "tool_execution",
@@ -234,6 +238,7 @@ def load_trace(trace_path: Path) -> tuple[list[dict[str, Any]], dict[int, str], 
         task_name = process_names.get(pid, f"pid_{pid}")
         message = normalize_message(args.get("message"))
 
+        cat = safe_str(event.get("cat"))
         normalized_events.append(
             {
                 "pid": pid,
@@ -242,7 +247,7 @@ def load_trace(trace_path: Path) -> tuple[list[dict[str, Any]], dict[int, str], 
                 "rollout_label": rollout_label,
                 "rollout_id": rollout_id,
                 "status": status,
-                "cat": safe_str(event.get("cat")),
+                "cat": CATEGORY_ALIASES.get(cat, cat),
                 "name": safe_str(event.get("name")),
                 "ts_us": ts_us,
                 "dur_us": dur_us,

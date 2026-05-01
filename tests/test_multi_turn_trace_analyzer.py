@@ -78,6 +78,7 @@ def build_synthetic_trace() -> list[dict]:
         },
         {"ph": "i", "pid": 100, "tid": 1, "name": "ignored_instant", "ts": 5},
         {"ph": "X", "pid": 100, "tid": 1, "cat": "queue_wait", "name": "Ray Queue Wait", "ts": 0, "dur": 10, "args": {"type": "startup"}},
+        {"ph": "X", "pid": 100, "tid": 1, "cat": "agent_init", "name": "Agent Init", "ts": 1, "dur": 2, "args": {"type": "agent_init"}},
         {
             "ph": "X",
             "pid": 100,
@@ -164,9 +165,9 @@ def test_load_trace_normalizes_metadata_and_optional_fields(tmp_path):
     events, process_names, thread_names, phase_counts = module.load_trace(trace_path)
 
     assert phase_counts["M"] == 3
-    assert phase_counts["X"] == 8
+    assert phase_counts["X"] == 9
     assert phase_counts["i"] == 1
-    assert len(events) == 8
+    assert len(events) == 9
     assert process_names[100] == "task_alpha (2 rollouts)"
     assert thread_names[(100, 1)].startswith("R1 [PASS]")
 
@@ -178,6 +179,9 @@ def test_load_trace_normalizes_metadata_and_optional_fields(tmp_path):
     assert first_llm["prompt_tokens"] == 5
     assert first_llm["completion_tokens"] == 7
     assert first_llm["response_id"] == "resp-1"
+
+    agent_init = next(event for event in events if event["name"] == "Agent Init")
+    assert agent_init["cat"] == "container_startup"
 
     tool_event = next(event for event in events if event["cat"] == "tool_execution" and event["tid"] == 1)
     assert tool_event["message"] == "hi\\nthere"
@@ -208,6 +212,7 @@ def test_aggregate_builds_expected_trajectory_task_and_turn_rows(tmp_path):
     assert traj1["tool_execution_us"] == 30
     assert traj1["framework_overhead_us"] == 5
     assert traj1["queue_wait_us"] == 10
+    assert traj1["container_startup_us"] == 2
     assert traj1["evaluation_us"] == 4
     assert traj1["llm_event_count"] == 2
     assert traj1["tool_event_count"] == 1
@@ -247,14 +252,18 @@ def test_aggregate_builds_expected_trajectory_task_and_turn_rows(tmp_path):
 
     concurrency_rows = aggregates["concurrency_rows"]
     assert concurrency_rows[0]["start_ts_us"] == 0
-    assert concurrency_rows[0]["end_ts_us"] == 5
+    assert concurrency_rows[0]["end_ts_us"] == 1
     assert concurrency_rows[0]["active_total"] == 1
     assert concurrency_rows[0]["active_queue_wait"] == 1
-    assert concurrency_rows[1]["start_ts_us"] == 5
-    assert concurrency_rows[1]["end_ts_us"] == 10
+    assert concurrency_rows[1]["start_ts_us"] == 1
+    assert concurrency_rows[1]["end_ts_us"] == 3
     assert concurrency_rows[1]["active_total"] == 2
-    assert concurrency_rows[1]["active_llm_generation"] == 1
+    assert concurrency_rows[1]["active_container_startup"] == 1
     assert concurrency_rows[1]["active_queue_wait"] == 1
+    queue_and_llm = next(row for row in concurrency_rows if row["start_ts_us"] == 5 and row["end_ts_us"] == 10)
+    assert queue_and_llm["active_total"] == 2
+    assert queue_and_llm["active_llm_generation"] == 1
+    assert queue_and_llm["active_queue_wait"] == 1
     assert any(row["dur_us"] == 5 and row["active_total"] == 0 for row in concurrency_rows)
 
     concurrency_summary = {row["metric"]: row for row in aggregates["concurrency_summary_rows"]}
