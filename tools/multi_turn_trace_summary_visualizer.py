@@ -1277,9 +1277,9 @@ def build_visual_summary(input_dir: Path) -> str:
         by_task_queue[task] += queue
         by_task_eval[task] += eval_time
 
-    task_comp_rows = []
-    task_comp_chart_rows = []
-    for task, total in sorted(by_task_total.items(), key=lambda item: item[1], reverse=True):
+    task_comp_rows_by_task = {}
+    task_comp_chart_rows_by_task = {}
+    for task, total in by_task_total.items():
         if total <= 0:
             continue
         llm_pct = by_task_llm[task] / total * 100.0
@@ -1288,30 +1288,33 @@ def build_visual_summary(input_dir: Path) -> str:
         framework_pct = by_task_framework[task] / total * 100.0
         queue_pct = by_task_queue[task] / total * 100.0
         eval_pct = by_task_eval[task] / total * 100.0
-        task_comp_rows.append(
+        task_comp_rows_by_task[task] = [
+            parse_task_name(task),
+            f"{llm_pct:.1f}",
+            f"{tool_pct:.1f}",
+            f"{env_pct:.1f}",
+            f"{framework_pct:.1f}",
+            f"{queue_pct:.1f}",
+            f"{eval_pct:.1f}",
+        ]
+        task_comp_chart_rows_by_task[task] = (
+            task,
             [
-                parse_task_name(task),
-                f"{llm_pct:.1f}",
-                f"{tool_pct:.1f}",
-                f"{env_pct:.1f}",
-                f"{framework_pct:.1f}",
-                f"{queue_pct:.1f}",
-                f"{eval_pct:.1f}",
-            ]
+                ("Generation", llm_pct, "#2563eb"),
+                ("Tool", tool_pct, "#f59e0b"),
+                ("Env bringup", env_pct, "#10b981"),
+                ("Framework", framework_pct, "#8b5cf6"),
+                ("Queue wait", queue_pct, "#ef4444"),
+                ("Evaluation", eval_pct, "#94a3b8"),
+            ],
         )
-        task_comp_chart_rows.append(
-            (
-                task,
-                [
-                    ("Generation", llm_pct, "#2563eb"),
-                    ("Tool", tool_pct, "#f59e0b"),
-                    ("Env bringup", env_pct, "#10b981"),
-                    ("Framework", framework_pct, "#8b5cf6"),
-                    ("Queue wait", queue_pct, "#ef4444"),
-                    ("Evaluation", eval_pct, "#94a3b8"),
-                ],
-            )
-        )
+
+    task_comp_rows = [task_comp_rows_by_task[row["task"]] for row in task_e2e_rows if row["task"] in task_comp_rows_by_task]
+    task_comp_chart_rows = [
+        task_comp_chart_rows_by_task[row["task"]]
+        for row in task_e2e_rows
+        if row["task"] in focus_task_names and row["task"] in task_comp_chart_rows_by_task
+    ]
 
     all_tasks_total = sum(by_task_total.values()) or 0.0
     if all_tasks_total > 0:
